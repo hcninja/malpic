@@ -59,9 +59,20 @@ func main() {
 		fmt.Printf("[+] Number of sections: %d\n", peFmt.NumberOfSections)
 		sections := peFmt.Sections
 		for k := range sections {
-			fmt.Printf("\t Name: %s\n", sections[k].Name)
-			fmt.Printf("\t Size: %d\n", sections[k].Size)
-			fmt.Printf("\t Offset: %d\n", sections[k].Offset)
+			sec := sections[k]
+			secName := sec.Name
+			secSize := sec.Size
+			secOffset := sec.Offset + 1
+			secEnd := secOffset + secSize - 1
+			secVSize := sec.VirtualSize
+			secVAddr := sec.VirtualAddress
+
+			fmt.Printf("\t Name: %s\n", secName)
+			fmt.Printf("\t Size: %d\n", secSize)
+			fmt.Printf("\t Offset: %d\n", secOffset)
+			fmt.Printf("\t Section end: %d\n", secEnd)
+			fmt.Printf("\t Virtual size: %d\n", secVSize)
+			fmt.Printf("\t Virtual address: %d\n", secVAddr)
 			fmt.Println("")
 		}
 	}
@@ -133,7 +144,10 @@ func encode(file []byte) {
 		}
 	}
 
+	var enc png.Encoder
+	enc.CompressionLevel = 0
+
 	malPict, _ := os.Create(outputFlag)
-	png.Encode(malPict, binImage)
+	enc.Encode(malPict, binImage)
 	fmt.Println("[+] Picture saved as: " + outputFlag)
 }
