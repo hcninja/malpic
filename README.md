@@ -28,4 +28,21 @@ Usage of malPic:
 
 ### Analysis:
 
+The visual analysis related flags are:
+
+* -colorize
+* -execinfo
+* -symbols
+
+
+** Format info **
+./malpic -in /bin/zsh -nopict
+
+** Format info and symbols **
+./malpic -in /bin/zsh -nopict -symbols
+
+
+### Autoanalysis:
+
+* -autoanal
 **NYI**
