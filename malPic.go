@@ -14,13 +14,14 @@ import (
 
 const VERSION = "0.1β"
 
+var infoFlag, execInfoFlag, colorizeFlag, symbolsDumpFlag bool
 var inputFlag, outputFlag string
-var decodeFlag, infoFlag, peInfoFlag bool
 
 func init() {
 	flag.BoolVar(&infoFlag, "info", false, "Shows version and extended info")
-	flag.BoolVar(&decodeFlag, "decode", false, "Decodes input to output")
-	flag.BoolVar(&peInfoFlag, "peinfo", false, "Gets information of the PE format")
+	flag.BoolVar(&execInfoFlag, "execinfo", false, "Gets information from the PE format")
+	flag.BoolVar(&symbolsDumpFlag, "symbols", false, "Dump symbols")
+	flag.BoolVar(&colorizeFlag, "colorize", false, "Colorizes the binary sections on the picture")
 	flag.StringVar(&inputFlag, "in", "", "Select file to take photo")
 	flag.StringVar(&outputFlag, "out", "", "Select the output name")
 }
@@ -44,20 +45,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	if peInfoFlag {
+	// Open file
+	file, err := ioutil.ReadFile(inputFlag)
+	if err != nil {
+		fmt.Printf("[!] %s\n", err)
+		os.Exit(1)
+	}
+
+	// An array of arrays for storing the section offsets
+	var sectionData [][]int
+
+	// Extract executable info
+	if execInfoFlag {
 		fmt.Printf("[+] Analyzing binary: %s\n", inputFlag)
 
 		// Check for executable type
 		peFmt, err := pe.Open(inputFlag)
 		if err != nil {
-			fmt.Printf("[!] %s is not a valid PE file\n", inputFlag)
+			fmt.Println("[!] This is not a valid PE file")
 			os.Exit(1)
 		}
 		defer peFmt.Close()
 
-		fmt.Printf("[+] %s is a valid PE file\n", inputFlag)
+		fmt.Println("[+] This is a valid PE file")
 		fmt.Printf("[+] Number of sections: %d\n", peFmt.NumberOfSections)
 		sections := peFmt.Sections
+
 		for k := range sections {
 			sec := sections[k]
 			secName := sec.Name
@@ -74,52 +87,34 @@ func main() {
 			fmt.Printf("\t Virtual size: %d\n", secVSize)
 			fmt.Printf("\t Virtual address: %d\n", secVAddr)
 			fmt.Println("")
+
+			sectionData = append(sectionData, []int{int(secOffset), int(secEnd)})
+		}
+
+		numberOfSymbols := peFmt.NumberOfSymbols
+		fmt.Printf("[+] Found %d symbols\n", numberOfSymbols)
+		if numberOfSymbols > 0 && symbolsDumpFlag {
+			symbols := peFmt.Symbols
+
+			for k := range symbols {
+				sym := symbols[k]
+				symName := sym.Name
+				// symType := sym.Type
+				// symValue := sym.Value
+
+				fmt.Printf("\t Name: %s", symName)
+				// fmt.Printf("\t\t Type: %d", symType)
+				// fmt.Printf("\t\t Value: %d", symValue)
+				fmt.Println("")
+			}
 		}
 	}
 
-	if decodeFlag {
-		decode(inputFlag)
-	} else {
-		// Open file
-		file, err := ioutil.ReadFile(inputFlag)
-		if err != nil {
-			fmt.Printf("[!] %s\n", err)
-			os.Exit(1)
-		}
-		encode(file)
-	}
+	encode(file, sectionData)
 }
 
-// Decodes a PGN grayscale file
-func decode(file string) {
-	// r, err := os.Open(file)
-	// if err != nil {
-	// 	fmt.Printf("[!] %s\n", err)
-	// 	os.Exit(1)
-	// }
-
-	// img, err := png.Decode(r)
-	// if err != nil {
-	// 	fmt.Printf("[!] %s\n", err)
-	// 	os.Exit(1)
-	// }
-
-	// var data color.Color{}
-	// max := 757
-
-	// for x := 0; x < max; x++ {
-	// 	for y := 0; y < max; y++ {
-	// 		data = append(data, []byte(img.At(x, y))[0])
-	// 	}
-	// }
-
-	// fmt.Println(len(data))
-
-	fmt.Println("[!] NYI")
-}
-
-// Encodes data to grayscale PNG file
-func encode(file []byte) {
+// Encodes data to monochromatic-scale PNG file
+func encode(file []byte, secDat [][]int) {
 	fSize := len(file)
 	min := 0
 	max := int(math.Sqrt(float64(fSize)))
@@ -133,12 +128,36 @@ func encode(file []byte) {
 		image.Rect(min, min, max, max),
 	)
 
+	var c color.Color
+	sectionNumber := 0
+
 	// Fill the image with the file bytes
 	for y := min; y < max; y++ {
 		for x := min; x < max; x++ {
-			c := color.Gray{
-				uint8(file[binIndex]),
+			// Set section color delimiters
+			idxA := binIndex > secDat[sectionNumber][0]
+			idxB := binIndex < secDat[sectionNumber][1]
+			lim := sectionNumber < len(secDat)-1
+
+			// Increase section number
+			if binIndex > secDat[sectionNumber][1] && lim {
+				sectionNumber++
 			}
+
+			// If the same section and colorize flags is set
+			if idxA && idxB && lim && colorizeFlag {
+				// Get a color for every different section
+				c = getColor(sectionNumber, file[binIndex])
+
+			} else {
+				c = color.RGBA{
+					uint8(file[binIndex]),
+					uint8(file[binIndex]),
+					uint8(file[binIndex]),
+					uint8(255),
+				}
+			}
+
 			binIndex++
 			binImage.Set(x, y, c)
 		}
@@ -150,4 +169,89 @@ func encode(file []byte) {
 	malPict, _ := os.Create(outputFlag)
 	enc.Encode(malPict, binImage)
 	fmt.Println("[+] Picture saved as: " + outputFlag)
+}
+
+// Generate color with the chromatic scale value setted
+func getColor(selector int, value byte) color.Color {
+	palette := []color.Color{
+		// Red
+		color.RGBA{
+			uint8(value),
+			uint8(16),
+			uint8(16),
+			uint8(255),
+		},
+		// Green
+		color.RGBA{
+			uint8(16),
+			uint8(value),
+			uint8(16),
+			uint8(255),
+		},
+		// Blue
+		color.RGBA{
+			uint8(16),
+			uint8(16),
+			uint8(value),
+			uint8(255),
+		},
+		// Yellow
+		color.RGBA{
+			uint8(value),
+			uint8(value),
+			uint8(16),
+			uint8(255),
+		},
+		// Turquoise
+		color.RGBA{
+			uint8(16),
+			uint8(value),
+			uint8(value),
+			uint8(255),
+		},
+		// Pink
+		color.RGBA{
+			uint8(value),
+			uint8(16),
+			uint8(value),
+			uint8(255),
+		},
+		// …
+		color.RGBA{
+			uint8(16),
+			uint8(value),
+			uint8(16),
+			uint8(128),
+		},
+		// …
+		color.RGBA{
+			uint8(16),
+			uint8(16),
+			uint8(value),
+			uint8(128),
+		},
+		// …
+		color.RGBA{
+			uint8(value),
+			uint8(value),
+			uint8(16),
+			uint8(128),
+		},
+		// …
+		color.RGBA{
+			uint8(16),
+			uint8(value),
+			uint8(value),
+			uint8(128),
+		},
+		// …
+		color.RGBA{
+			uint8(value),
+			uint8(16),
+			uint8(value),
+			uint8(128),
+		},
+	}
+
+	return palette[selector]
 }
